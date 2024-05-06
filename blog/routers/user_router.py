@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-from .. import database, hashing, models, schemas
+from .. import database, hashing, models, oauth2, schemas
 
 router = APIRouter(
     prefix="/user",
@@ -10,16 +10,16 @@ router = APIRouter(
     )
 
 @router.get("/", status_code=status.HTTP_200_OK, response_model=List[schemas.ShowUser])
-def get_all_users(db: Session = Depends(database.get_db)):
-    users = db.query(models.User).all()
+def get_current_user(db: Session = Depends(database.get_db), current_user: schemas.User = Depends(oauth2.get_current_user)):
+    users = db.query(models.User).filter(models.User.id==current_user.id).all()
     return users
 
-@router.get("/{id}", status_code=status.HTTP_200_OK, response_model=schemas.ShowUser)
-def get_user(id: int, db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.id==id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Could not find record of user id {id}.")
-    return user
+# @router.get("/{id}", status_code=status.HTTP_200_OK, response_model=schemas.ShowUser)
+# def get_user_by_id(id: int, db: Session = Depends(database.get_db), current_user: schemas.User = Depends(oauth2.get_current_user)):
+#     user = db.query(models.User).filter(models.User.id==id).first()
+#     if not user:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Could not find record of user id {id}.")
+#     return user
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=schemas.ShowUser)
 def create_user(request: schemas.User, db: Session = Depends(database.get_db)):
@@ -34,29 +34,29 @@ def create_user(request: schemas.User, db: Session = Depends(database.get_db)):
     db.refresh(new_user)
     return new_user
 
-@router.put("/{id}", status_code=status.HTTP_201_CREATED)
-def update_user(id: int, request: schemas.User, db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.id==id).first()
+@router.put("/", status_code=status.HTTP_201_CREATED)
+def update_user(request: schemas.User, db: Session = Depends(database.get_db), current_user: schemas.User = Depends(oauth2.get_current_user)):
+    user = db.query(models.User).filter(models.User.id==current_user.id).first()
     if not user:
-      raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Could not find record of user id {id}.")
+      raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Could not find record of user.")
     
     for attr, value in request.dict().items():
         if attr == "password":
             value = hashing.Hash.bcrypt(value)
         setattr(user, attr, value)
     db.commit()
-    return {"message": f"Record id {id} updated."}
+    return {"message": "Record updated."}
     
 
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_user(id: int, db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.id == id).first()
+@router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(db: Session = Depends(database.get_db), current_user: schemas.User = Depends(oauth2.get_current_user)):
+    user = db.query(models.User).filter(models.User.id == current_user.id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with id {id} not found.",
+            detail=f"User not found.",
         )
     db.delete(user)
     db.commit()
-    return {"message": f"Record id {id} deleted."}
+    return {"message": "Record deleted."}
